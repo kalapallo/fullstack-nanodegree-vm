@@ -1,0 +1,16 @@
+{% extends "main.html" %}
+{% block content %}
+
+<h2>{{ category }} Items</h2>
+
+{% if items != [] %}
+    {% for i in items %}
+        <a href='{{url_for('show_item', category=i.Category.name, item_id=i.Item.id )}}'>
+        {{ i[0].name }}
+        </a>
+        <br>
+    {% endfor %}
+{% endif %}
+
+
+{% endblock %}

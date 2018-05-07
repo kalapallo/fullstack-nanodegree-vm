@@ -1,0 +1,50 @@
+{% extends "main.html" %}
+{% block content %}
+
+<p>Edit Item</p>
+
+<form action="/catalog/{{ item.id }}/edit" method="post">
+  Title<br>
+  <input type="text" name="name" value="{{ item.name }}">
+  <br>
+  Description<br>
+  <input type="text" name="description" value="{{ item.description }}">
+  <br>
+  Category<br>
+  <select id="dropdown" name="category" onChange="hideNewCategory()">
+    <option value="new_category_option" on>New category</option>
+    {% if categories != [] %}
+      {% for i in categories %}
+        {% if i.id == item.category %}
+        <option value="{{ i.id }}" selected="selected">{{ i.name }}</option>
+        {% else %}
+        <option value="{{ i.id }}">{{ i.name }}</option>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  </select>
+  <div id="add_new">
+    <p>Write a new category name: </p>
+    <input type="text" name="new_category">
+  </div>
+  <br><br>
+  <input type="submit" value="Save">
+</form>
+
+<script>
+function hideNewCategory() {
+    var selected = document.getElementById("dropdown").value;
+    var x = document.getElementById("add_new");
+
+    if (selected == "new_category_option") {
+      x.style.display = "block";
+    }
+    else {
+      x.style.display = "none";
+    }
+}
+
+hideNewCategory();
+</script>
+
+{% endblock %}
