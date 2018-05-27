@@ -182,6 +182,8 @@ def gconnect():
     if not user_id:
         create_user(login_session)
     login_session['user_id'] = user_id
+
+
     #user = session.query(User).filter_By(id = user_id).one()
     #if (user)
     #    print('user already exists')
@@ -241,6 +243,10 @@ def create_user(login_session):
     session.add(new_user)
     session.commit()
     user = session.query(User).filter_by(email=login_session['email']).one()
+
+    token = user.generate_auth_token(600)
+    #return jsonify({'token': token.decode('ascii')})
+
     return user.id
 
 def get_user_ID(email):
