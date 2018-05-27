@@ -4,6 +4,7 @@ from flask import jsonify, request, make_response, flash
 from flask import session as login_session
 import random, string
 from collections import namedtuple
+import requests
 
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import sessionmaker
@@ -28,9 +29,37 @@ CLIENT_ID = json.loads(
     open('client_secrets.json', 'r').read())['web']['client_id']
 
 
+#def login_required(f):
+#    @wraps(f)
+#    def decorated_function(*args, **kwargs):
+#        print "DEBUG: inside login_required() now"
+#        if g.user is None:
+#            return redirect(url_for('show_login', next=request.url))
+#        return f(*args, **kwargs)
+#    return decorated_function
+
+
 @auth.verify_password
-def verify_password(username, password):
-    user = session.query(User).filter_by(username=username).first()
+def verify_password(username_or_token, password):
+    print "DEBUG: at verify_password() now"
+    print username_or_token
+    print password
+    username_or_token = login_session.get('access_token')
+    print username_or_token
+    user_id = User.verify_auth_token(username_or_token)
+    print user_id
+    if user_id:
+        print "user_id TRUE"
+        user = session.query(User).filter_by(id=user_id).one()
+    else:
+        print "NOT user_id"
+        user = session.query(User).filter_by(username=username_or_token).first()
+        print user
+        if not user or not user.verify_password(password):
+            print "returning false"
+            return False
+    g.user = user
+    return True
 
 
 @app.route('/gconnect', methods=['POST'])
@@ -49,14 +78,39 @@ def gconnect():
         print("DEBUG: trying")
         # Upgrade the authorization code into a credentials object
         oauth_flow = flow_from_clientsecrets('client_secrets.json',
-            scope='',
-            redirect_uri='http://localhost:8000/')
+            scope='https://www.googleapis.com/auth/userinfo.profile',
+            redirect_uri='postmessage')
+            #redirect_uri='http://localhost:8000/')
+        ### TEST ###
+        #flow = OAuth2WebServerFlow(client_id='your_client_id',
+        #                   client_secret='your_client_secret',
+        #                   scope='https://www.googleapis.com/auth/calendar',
+        #                   redirect_uri='http://example.com/auth_return')
+        ### END ###
+
+        #auth_uri = oauth_flow.step1_get_authorize_url()
+        #print auth_uri
+        #redirect(auth_uri)
+        #print "redirect done?"
+
+        #https://accounts.google.com/o/oauth2/auth?
+        #    scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile&
+        #    redirect_uri=postmessage&
+        #    response_type=code&
+        #    client_id=899633532195-398cams8rt9av54r67cbna75hga6grrs.apps.googleusercontent.com&
+        #    access_type=offline
+
+
+        # AHAA!
+
+
         oauth_flow.redirect_uri = 'postmessage'
         print("DEBUG: " + code)
         credentials = oauth_flow.step2_exchange(code)
         print("DEBUG: trying done")
-    except FlowExchangeError:
+    except FlowExchangeError as err:
         print("DEBUG: failed")
+        print err
         response = make_response(
             json.dumps('Failed to upgrade the authorization code.'), 401)
         response.headers['Content-Type'] = 'application/json'
@@ -77,6 +131,7 @@ def gconnect():
     if result.get('error') is not None:
         response = make_response(json.dumps(result.get('error')), 500)
         response.headers['Content-Type'] = 'application/json'
+        print "DEBUG: login error"
         return response
 
     # Verify that the access token is used for the intended user.
@@ -85,13 +140,14 @@ def gconnect():
         response = make_response(
             json.dumps("Token's user ID doesn't match given user ID."), 401)
         response.headers['Content-Type'] = 'application/json'
+        print "DEBUG: Token's user ID doesn't match given user ID."
         return response
 
     # Verify that the access token is valid for this app.
     if result['issued_to'] != CLIENT_ID:
         response = make_response(
             json.dumps("Token's client ID does not match app's."), 401)
-        print "Token's client ID does not match app's."
+        print "DEBUG: Token's client ID does not match app's."
         response.headers['Content-Type'] = 'application/json'
         return response
 
@@ -101,6 +157,7 @@ def gconnect():
         response = make_response(json.dumps('Current user is already connected.'),
                                  200)
         response.headers['Content-Type'] = 'application/json'
+        print "DEBUG: user already connected"
         return response
 
     # Store the access token in the session for later use.
@@ -120,6 +177,8 @@ def gconnect():
 
     # check if user exists already
     user_id = get_user_ID(login_session['email'])
+    print "DEBUG: CHECKING IF USER ALREADY EXISTS"
+    print user_id
     if not user_id:
         create_user(login_session)
     login_session['user_id'] = user_id
@@ -153,7 +212,8 @@ def gdisconnect():
     print 'In gdisconnect access token is %s', access_token
     print 'User name is: '
     print login_session['username']
-    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % login_session['access_token']
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % \
+        login_session['access_token']
     h = httplib2.Http()
     result = h.request(url, 'GET')[0]
     print 'result is '
@@ -175,14 +235,27 @@ def gdisconnect():
 
 
 def create_user(login_session):
-    new_user = User(username=login_session['username'])
+    print "DEBUG: CREATING NEW USER"
+    new_user = User(username=login_session['username'],
+        email=login_session['email'])
     session.add(new_user)
     session.commit()
     user = session.query(User).filter_by(email=login_session['email']).one()
     return user.id
 
-def get_user_ID():
-    pass
+def get_user_ID(email):
+    try:
+        user = session.query(User).filter_by(email=email).one()
+        return user.id
+    except:
+        return None
+
+
+@app.route('/token')
+@auth.login_required
+def get_auth_token():
+    token = g.user.generate_auth_token()
+    return jsonify({'token': token.decode('ascii')})
 
 
 @app.route('/login')
@@ -201,8 +274,11 @@ def show_catalog():
     items = session.query(Item, Category).filter(Category.id == Item.category) \
         .order_by(desc(Item.date_added)).limit(10).all()
 
-    return render_template("catalog.html", categories=categories,
-        items=items)
+    logged_in = 'username' in login_session
+    print logged_in
+
+    return render_template("catalog.html", logged_in=logged_in,
+        categories=categories, items=items)
 
 
 @app.route('/catalog/<category>/items')
@@ -221,20 +297,21 @@ def show_items(category):
 
 @app.route('/catalog/<category>/<item_id>')
 def show_item(category, item_id):
-
     try:
         item_object = session.query(Item, Category).filter(
             Category.name == category).filter(Item.id == item_id).one()
 
-        return render_template("item.html", item=item_object.Item,
-            category=item_object.Category)
+        logged_in = 'username' in login_session
+
+        return render_template("item.html", logged_in=logged_in,
+            item=item_object.Item, category=item_object.Category)
     except:
         error = "Item or category not found"
         return render_template("error.html", error=error)
 
 
 @app.route('/catalog/add', methods=['GET', 'POST'])
-#@auth.login_required
+@auth.login_required
 def add_item():
     if request.method == 'POST':
         name = request.form['name']
@@ -278,7 +355,7 @@ def add_item():
 
 
 @app.route('/catalog/<item_id>/edit', methods=['GET', 'POST'])
-#@auth.login_required
+@auth.login_required
 def edit_item(item_id):
 
     # TODO: combine functionality with add_item
@@ -324,7 +401,7 @@ def edit_item(item_id):
 
 
 @app.route('/catalog/<item_id>/delete', methods=['GET', 'POST'])
-#@auth.login_required
+@auth.login_required
 def delete_item(item_id):
     item = None
     try:
@@ -346,7 +423,8 @@ def delete_item(item_id):
 
 @app.route('/catalog.json')
 def show_json():
-    return "show json"
+    categories = session.query(Category).all()
+    return jsonify(Category=[i.serialize for i in categories])
 
 
 if __name__ == '__main__':
