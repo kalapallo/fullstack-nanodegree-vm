@@ -97,11 +97,8 @@ def gconnect():
         #    scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile&
         #    redirect_uri=postmessage&
         #    response_type=code&
-        #    client_id=899633532195-398cams8rt9av54r67cbna75hga6grrs.apps.googleusercontent.com&
+        #    client_id="<TODO>"&
         #    access_type=offline
-
-
-        # AHAA!
 
 
         oauth_flow.redirect_uri = 'postmessage'
