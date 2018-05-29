@@ -24,9 +24,11 @@ class User(Base):
     email = Column(String(64), index=True)
     password_hash = Column(String(64))
 
+    # Actually not used at all; all authentication done with tokens
     def hash_password(self, password):
         self.password_hash = pwd_context.encrypt(password)
 
+    # Actually not used at all
     def verify_password(self, password):
         return pwd_context.verify(password, self.password_hash)
 
@@ -41,16 +43,11 @@ class User(Base):
             data = s.loads(token)
         except SignatureExpired:
             # Valid Token, but expired
-            print "valid but expired"
             return None
         except BadSignature:
             # Invalid Token
-            print "invalid token"
             return None
         user_id = data['id']
-        print "valid token!"
-        print user_id
-        print "done"
         return user_id
 
 

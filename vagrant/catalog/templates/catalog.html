@@ -1,8 +1,6 @@
 {% extends "main.html" %}
 {% block content %}
 
-<!--a href="/login">Login</a-->
-
 <br>
 {% if logged_in == True %}
 <a href='{{url_for('add_item')}}'>Add item</a>

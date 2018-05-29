@@ -3,7 +3,6 @@ from flask import Flask, render_template, redirect, url_for
 from flask import jsonify, request, make_response, flash
 from flask import session as login_session
 import random, string
-from collections import namedtuple
 import requests
 
 from sqlalchemy import create_engine, desc
@@ -25,52 +24,33 @@ DBSession = sessionmaker(bind=engine)
 session = DBSession()
 app = Flask(__name__)
 
-#auth_token = ''
-
 CLIENT_ID = json.loads(
     open('client_secrets.json', 'r').read())['web']['client_id']
 
 
-#def login_required(f):
-#    @wraps(f)
-#    def decorated_function(*args, **kwargs):
-#        print "DEBUG: inside login_required() now"
-#        if g.user is None:
-#            return redirect(url_for('show_login', next=request.url))
-#        return f(*args, **kwargs)
-#    return decorated_function
-
-
 @auth.verify_password
 def verify_password(username_or_token, password):
-    print 'DEBUG!'
-    is_user_connected()
-    print "DEBUG: at verify_password() now"
-    print username_or_token
-    print password
-    #username_or_token = auth_token#login_session.get('access_token')
+    # Actually arguments are not used, just check if logged in
+    # NOTE: only works within a session, so the user must re-login
+    # everytime the app is restarted
     username_or_token = login_session.get('auth_token')
-    print username_or_token
+
+    if not username_or_token:
+        return False
+
     user_id = User.verify_auth_token(username_or_token)
     print user_id
     if user_id:
-        print "user_id TRUE"
         user = session.query(User).filter_by(id=user_id).one()
     else:
-        print "NOT user_id"
         user = session.query(User).filter_by(username=username_or_token).first()
-        print user
         if not user or not user.verify_password(password):
-            print "returning false"
             return False
-    #g.user = user
     return True
 
 
 @app.route('/gconnect', methods=['POST'])
 def gconnect():
-    print("DEBUG: entering gconnect()")
-    print(request.args)
     # Validate state token
     if request.args.get('state') != login_session['state']:
         response = make_response(json.dumps('Invalid state parameter.'), 401)
@@ -80,40 +60,15 @@ def gconnect():
     code = request.data
 
     try:
-        # TODO DEBUG
-        #is_user_connected()
-        print("DEBUG: trying")
         # Upgrade the authorization code into a credentials object
-        oauth_flow = flow_from_clientsecrets('client_secrets.json',
+        oauth_flow = flow_from_clientsecrets(
+            'client_secrets.json',
             scope='https://www.googleapis.com/auth/userinfo.profile',
             redirect_uri='postmessage')
-            #redirect_uri='http://localhost:8000/')
-        ### TEST ###
-        #flow = OAuth2WebServerFlow(client_id='your_client_id',
-        #                   client_secret='your_client_secret',
-        #                   scope='https://www.googleapis.com/auth/calendar',
-        #                   redirect_uri='http://example.com/auth_return')
-        ### END ###
-
-        #auth_uri = oauth_flow.step1_get_authorize_url()
-        #print auth_uri
-        #redirect(auth_uri)
-        #print "redirect done?"
-
-        #https://accounts.google.com/o/oauth2/auth?
-        #    scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile&
-        #    redirect_uri=postmessage&
-        #    response_type=code&
-        #    client_id="<TODO>"&
-        #    access_type=offline
-
 
         oauth_flow.redirect_uri = 'postmessage'
-        print("DEBUG: " + code)
         credentials = oauth_flow.step2_exchange(code)
-        print("DEBUG: trying done")
     except FlowExchangeError as err:
-        print("DEBUG: failed")
         print err
         response = make_response(
             json.dumps('Failed to upgrade the authorization code.'), 401)
@@ -123,7 +78,7 @@ def gconnect():
     # Check that the access token is valid.
     access_token = credentials.access_token
 
-    # TODO HANNU: might need to do this instead (from forums):
+    # TODO: might need to do this instead (from forums):
     #data = request.data.decode('utf8')
     #credentials = json.loads(data)
 
@@ -135,7 +90,6 @@ def gconnect():
     if result.get('error') is not None:
         response = make_response(json.dumps(result.get('error')), 500)
         response.headers['Content-Type'] = 'application/json'
-        print "DEBUG: login error"
         return response
 
     # Verify that the access token is used for the intended user.
@@ -144,25 +98,21 @@ def gconnect():
         response = make_response(
             json.dumps("Token's user ID doesn't match given user ID."), 401)
         response.headers['Content-Type'] = 'application/json'
-        print "DEBUG: Token's user ID doesn't match given user ID."
         return response
 
     # Verify that the access token is valid for this app.
     if result['issued_to'] != CLIENT_ID:
         response = make_response(
             json.dumps("Token's client ID does not match app's."), 401)
-        print "DEBUG: Token's client ID does not match app's."
         response.headers['Content-Type'] = 'application/json'
         return response
 
-    #if is_user_connected():
     stored_access_token = login_session.get('access_token')
     stored_gplus_id = login_session.get('gplus_id')
     if stored_access_token is not None and gplus_id == stored_gplus_id:
         response = make_response(json.dumps('Current user is already connected.'),
                                  200)
         response.headers['Content-Type'] = 'application/json'
-        print "DEBUG: user already connected"
         return response
 
     # Store the access token in the session for later use.
@@ -182,24 +132,13 @@ def gconnect():
 
     # check if user exists already
     user_id = get_user_ID(login_session['email'])
-    print "DEBUG: CHECKING IF USER ALREADY EXISTS"
-    print user_id
     if not user_id:
         user_id = create_user(login_session)
     login_session['user_id'] = user_id
 
     user = session.query(User).filter_by(id=user_id).one()
-    #global auth_token
     auth_token = user.generate_auth_token()
-    print "generated auth_token:"
-    print auth_token
     login_session['auth_token'] = auth_token
-
-    #if (user)
-    #    print('user already exists')
-    #else
-    #    print('new user, create it')
-    #    createUser(login_session)
 
     output = ''
     output += '<h1>Welcome, '
@@ -209,19 +148,7 @@ def gconnect():
     output += login_session['picture']
     output += ' " style = "width: 300px; height: 300px;border-radius: 150px;-webkit-border-radius: 150px;-moz-border-radius: 150px;"> '
     flash("you are now logged in as %s" % login_session['username'])
-    print "done!"
     return output
-
-
-def is_user_connected():
-    if 'username' in login_session:
-        username = login_session['username']
-        print username
-        print login_session
-    #stored_access_token = login_session.get('access_token')
-    #stored_gplus_id = login_session.get('gplus_id')
-    #if stored_access_token is not None and gplus_id == stored_gplus_id:
-    #    return True
 
 
 @app.route('/gdisconnect')
@@ -232,18 +159,24 @@ def gdisconnect():
         response = make_response(json.dumps('Current user not connected.'), 401)
         response.headers['Content-Type'] = 'application/json'
         return response
-    print 'In gdisconnect access token is %s', access_token
-    print 'User name is: '
-    print login_session['username']
+    #print 'In gdisconnect access token is %s', access_token
+    #print 'User name is: '
+    #print login_session['username']
     url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % \
         login_session['access_token']
     h = httplib2.Http()
     result = h.request(url, 'GET')[0]
-    print 'result is '
-    print result
+    #print 'result is '
+    #print result
+
+    # Seems like the disconnect has to be forced because a lot of times the
+    # returned code is 400 due to tokens not matching. Which makes it
+    # impossible to disconnect a user. Okay.
+
     #if result['status'] == '200':
     if True:
         del login_session['access_token']
+        del login_session['auth_token']
         del login_session['gplus_id']
         del login_session['username']
         del login_session['email']
@@ -252,7 +185,8 @@ def gdisconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
     else:
-        response = make_response(json.dumps('Failed to revoke token for given user.',
+        response = make_response(json.dumps(
+            'Failed to revoke token for given user.',
             400))
         response.headers['Content-Type'] = 'application/json'
     return response
@@ -260,7 +194,7 @@ def gdisconnect():
 
 def create_user(login_session):
     new_user = User(username=login_session['username'],
-        email=login_session['email'])
+                    email=login_session['email'])
     session.add(new_user)
     session.commit()
     user = session.query(User).filter_by(email=login_session['email']).one()
@@ -289,24 +223,29 @@ def logout():
         # Disconnect first
         gdisconnect()
 
+        flash('You were successfully logged out')
+
         # Redirect in some cases
-        sender = request.args.get('sender')
-        param1 = request.args.get('param1')
-        param2 = request.args.get('param2')
+        sender = request.args.get('sender')  # sender URL
+        param1 = request.args.get('param1')  # 1st argument for url_for
+        param2 = request.args.get('param2')  # 2nd argument for url_for
+
+        # I was trying to be smart and redirect back to the original page,
+        # but didn't find any nice ways to do it so just include the
+        # information as parameters... but seems like it doesn't work se well
 
         if sender and param1 and param2:
             # Only used for 'show_item'
-            print param1
-            print param2
             return redirect(url_for(sender, category=param1, item_id=param2))
-            # Looks like this idea didn't work out... So much for a generic
-            # solution
+            # Looks like this idea didn't work out...
+            # So much for a generic solution
             #return redirect(url_for(sender, param1, param2))
         elif sender and param1:
             # Only used for 'show_items'
             return redirect(url_for(sender, category=param1))
             #return redirect(url_for(sender, param1))
 
+        # No redirecting, go back to main page
         return redirect(url_for('show_catalog'))
 
 
@@ -320,7 +259,7 @@ def show_catalog():
     logged_in = 'username' in login_session
 
     return render_template("catalog.html", logged_in=logged_in,
-        categories=categories, items=items)
+                           categories=categories, items=items)
 
 
 @app.route('/catalog/<category>/items')
@@ -337,7 +276,7 @@ def show_items(category):
     logged_in = 'username' in login_session
 
     return render_template("items.html", logged_in=logged_in,
-        category=cat.name, items=items)
+                           category=cat.name, items=items)
 
 
 @app.route('/catalog/<category>/<item_id>')
@@ -349,7 +288,8 @@ def show_item(category, item_id):
         logged_in = 'username' in login_session
 
         return render_template("item.html", logged_in=logged_in,
-            item=item_object.Item, category=item_object.Category)
+                               item=item_object.Item,
+                               category=item_object.Category)
     except:
         error = "Item or category not found"
         return render_template("error.html", error=error)
@@ -368,7 +308,6 @@ def add_item():
 
         category_id = ''
         if category == 'new_category_option':
-            print "creating new category"
             # Create new category item
             category = new_category
             c = Category(name=category)
@@ -379,7 +318,6 @@ def add_item():
             category_id = item_category.id
             category = item_category.name
         else:
-            print "existing category, category id = " + category
             old_category = session.query(Category).filter_by(id=category).one()
             category_id = old_category.id
             category = old_category.name
@@ -392,23 +330,18 @@ def add_item():
         session.add(item)
         session.commit()
 
-        print "added item"
-
         return redirect(url_for('show_items', logged_in=logged_in,
-            category=category))
+                                category=category))
     else:
         categories = session.query(Category).all()
-        print categories
         return render_template("add_item.html", logged_in=logged_in,
-            categories=categories)
+                               categories=categories)
 
 
 @app.route('/catalog/<item_id>/edit', methods=['GET', 'POST'])
 @auth.login_required
 def edit_item(item_id):
     logged_in = True
-    # TODO: combine functionality with add_item
-
     item = None
     try:
         item = session.query(Item).filter_by(id=item_id).one()
@@ -422,8 +355,8 @@ def edit_item(item_id):
         new_category = request.form['new_category']
 
         category_id = ''
-        # Create new category for item
         if category == 'new_category_option':
+            # Create new category for item
             c = Category(name=new_category)
             session.add(c)
             category_id = c.id
@@ -441,13 +374,13 @@ def edit_item(item_id):
         cat = session.query(Category).filter_by(id=category_id).one()
 
         return redirect(url_for('show_items', logged_in=logged_in,
-            category=cat.name))
+                                category=cat.name))
     else:
         categories = session.query(Category).all()
         item = session.query(Item).filter_by(id=item_id).one()
 
         return render_template("edit_item.html", logged_in=logged_in,
-            categories=categories, item=item)
+                               categories=categories, item=item)
 
 
 @app.route('/catalog/<item_id>/delete', methods=['GET', 'POST'])
@@ -467,10 +400,10 @@ def delete_item(item_id):
         session.commit()
 
         return redirect(url_for('show_items', logged_in=logged_in,
-            category=category.name))
+                                category=category.name))
     else:
         return render_template("delete_item.html", logged_in=logged_in,
-            item=item)
+                               item=item)
 
 
 @app.route('/catalog.json')
