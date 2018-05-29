@@ -20,7 +20,18 @@
   <body>
     <div class="container">
       <h1>Catalog App</h1>
-      <a href="/login">Login</a>
+      {% if logged_in %}
+        {% if sender and param1 and param2 %}
+          <a href="/logout?sender={{sender}}&param1={{param1}}&param2={{param2}}">Logout</a>
+        {% elif sender and param1 %}
+          <a href="/logout?sender={{sender}}&param1={{param1}}">Logout</a>
+        {% else %}
+          <a href="/logout">Logout TEMP</a>
+        {% endif%}
+      {% else %}
+        <a href="/login">Login</a>
+      {% endif %}
+
       {% block content %}
       {% endblock %}
     </div>

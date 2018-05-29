@@ -25,6 +25,8 @@ DBSession = sessionmaker(bind=engine)
 session = DBSession()
 app = Flask(__name__)
 
+#auth_token = ''
+
 CLIENT_ID = json.loads(
     open('client_secrets.json', 'r').read())['web']['client_id']
 
@@ -41,10 +43,13 @@ CLIENT_ID = json.loads(
 
 @auth.verify_password
 def verify_password(username_or_token, password):
+    print 'DEBUG!'
+    is_user_connected()
     print "DEBUG: at verify_password() now"
     print username_or_token
     print password
-    username_or_token = login_session.get('access_token')
+    #username_or_token = auth_token#login_session.get('access_token')
+    username_or_token = login_session.get('auth_token')
     print username_or_token
     user_id = User.verify_auth_token(username_or_token)
     print user_id
@@ -58,7 +63,7 @@ def verify_password(username_or_token, password):
         if not user or not user.verify_password(password):
             print "returning false"
             return False
-    g.user = user
+    #g.user = user
     return True
 
 
@@ -75,6 +80,8 @@ def gconnect():
     code = request.data
 
     try:
+        # TODO DEBUG
+        #is_user_connected()
         print("DEBUG: trying")
         # Upgrade the authorization code into a credentials object
         oauth_flow = flow_from_clientsecrets('client_secrets.json',
@@ -148,6 +155,7 @@ def gconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
 
+    #if is_user_connected():
     stored_access_token = login_session.get('access_token')
     stored_gplus_id = login_session.get('gplus_id')
     if stored_access_token is not None and gplus_id == stored_gplus_id:
@@ -177,11 +185,16 @@ def gconnect():
     print "DEBUG: CHECKING IF USER ALREADY EXISTS"
     print user_id
     if not user_id:
-        create_user(login_session)
+        user_id = create_user(login_session)
     login_session['user_id'] = user_id
 
+    user = session.query(User).filter_by(id=user_id).one()
+    #global auth_token
+    auth_token = user.generate_auth_token()
+    print "generated auth_token:"
+    print auth_token
+    login_session['auth_token'] = auth_token
 
-    #user = session.query(User).filter_By(id = user_id).one()
     #if (user)
     #    print('user already exists')
     #else
@@ -198,6 +211,17 @@ def gconnect():
     flash("you are now logged in as %s" % login_session['username'])
     print "done!"
     return output
+
+
+def is_user_connected():
+    if 'username' in login_session:
+        username = login_session['username']
+        print username
+        print login_session
+    #stored_access_token = login_session.get('access_token')
+    #stored_gplus_id = login_session.get('gplus_id')
+    #if stored_access_token is not None and gplus_id == stored_gplus_id:
+    #    return True
 
 
 @app.route('/gdisconnect')
@@ -217,7 +241,8 @@ def gdisconnect():
     result = h.request(url, 'GET')[0]
     print 'result is '
     print result
-    if result['status'] == '200':
+    #if result['status'] == '200':
+    if True:
         del login_session['access_token']
         del login_session['gplus_id']
         del login_session['username']
@@ -234,15 +259,11 @@ def gdisconnect():
 
 
 def create_user(login_session):
-    print "DEBUG: CREATING NEW USER"
     new_user = User(username=login_session['username'],
         email=login_session['email'])
     session.add(new_user)
     session.commit()
     user = session.query(User).filter_by(email=login_session['email']).one()
-
-    token = user.generate_auth_token(600)
-    #return jsonify({'token': token.decode('ascii')})
 
     return user.id
 
@@ -254,20 +275,39 @@ def get_user_ID(email):
         return None
 
 
-@app.route('/token')
-@auth.login_required
-def get_auth_token():
-    token = g.user.generate_auth_token()
-    return jsonify({'token': token.decode('ascii')})
-
-
 @app.route('/login')
 def show_login():
     state = ''.join(random.choice(string.ascii_uppercase + string.digits)
                     for x in xrange(32))
     login_session['state'] = state
-    print "DEBUG " + state
     return render_template('login.html', STATE=state)
+
+
+@app.route('/logout')
+def logout():
+    if 'username' in login_session:
+        # Disconnect first
+        gdisconnect()
+
+        # Redirect in some cases
+        sender = request.args.get('sender')
+        param1 = request.args.get('param1')
+        param2 = request.args.get('param2')
+
+        if sender and param1 and param2:
+            # Only used for 'show_item'
+            print param1
+            print param2
+            return redirect(url_for(sender, category=param1, item_id=param2))
+            # Looks like this idea didn't work out... So much for a generic
+            # solution
+            #return redirect(url_for(sender, param1, param2))
+        elif sender and param1:
+            # Only used for 'show_items'
+            return redirect(url_for(sender, category=param1))
+            #return redirect(url_for(sender, param1))
+
+        return redirect(url_for('show_catalog'))
 
 
 @app.route('/')
@@ -278,7 +318,6 @@ def show_catalog():
         .order_by(desc(Item.date_added)).limit(10).all()
 
     logged_in = 'username' in login_session
-    print logged_in
 
     return render_template("catalog.html", logged_in=logged_in,
         categories=categories, items=items)
@@ -295,7 +334,10 @@ def show_items(category):
     items = session.query(Item, Category).filter(
         Item.category == cat.id).filter(Category.id == Item.category).all()
 
-    return render_template("items.html", category=cat.name, items=items)
+    logged_in = 'username' in login_session
+
+    return render_template("items.html", logged_in=logged_in,
+        category=cat.name, items=items)
 
 
 @app.route('/catalog/<category>/<item_id>')
@@ -316,6 +358,8 @@ def show_item(category, item_id):
 @app.route('/catalog/add', methods=['GET', 'POST'])
 @auth.login_required
 def add_item():
+    logged_in = True
+
     if request.method == 'POST':
         name = request.form['name']
         description = request.form['description']
@@ -350,17 +394,19 @@ def add_item():
 
         print "added item"
 
-        return redirect(url_for('show_items', category=category))
+        return redirect(url_for('show_items', logged_in=logged_in,
+            category=category))
     else:
         categories = session.query(Category).all()
         print categories
-        return render_template("add_item.html", categories=categories)
+        return render_template("add_item.html", logged_in=logged_in,
+            categories=categories)
 
 
 @app.route('/catalog/<item_id>/edit', methods=['GET', 'POST'])
 @auth.login_required
 def edit_item(item_id):
-
+    logged_in = True
     # TODO: combine functionality with add_item
 
     item = None
@@ -394,18 +440,20 @@ def edit_item(item_id):
 
         cat = session.query(Category).filter_by(id=category_id).one()
 
-        return redirect(url_for('show_items', category=cat.name))
+        return redirect(url_for('show_items', logged_in=logged_in,
+            category=cat.name))
     else:
         categories = session.query(Category).all()
         item = session.query(Item).filter_by(id=item_id).one()
 
-        return render_template("edit_item.html", categories=categories,
-            item=item)
+        return render_template("edit_item.html", logged_in=logged_in,
+            categories=categories, item=item)
 
 
 @app.route('/catalog/<item_id>/delete', methods=['GET', 'POST'])
 @auth.login_required
 def delete_item(item_id):
+    logged_in = True
     item = None
     try:
         item = session.query(Item).filter_by(id=item_id).one()
@@ -418,10 +466,11 @@ def delete_item(item_id):
         session.delete(item)
         session.commit()
 
-        print "deleted item!"
-        return redirect(url_for('show_items', category=category.name))
+        return redirect(url_for('show_items', logged_in=logged_in,
+            category=category.name))
     else:
-        return render_template("delete_item.html", item=item)
+        return render_template("delete_item.html", logged_in=logged_in,
+            item=item)
 
 
 @app.route('/catalog.json')
