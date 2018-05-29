@@ -6,7 +6,9 @@ This program starts a Python web server that connects to a "catalog" database to
 
 Before running the application, the user must register the app on Google and get a valid client ID and a client secret. These are required so that the authentication can work. After getting the ID, locate the line 4 in login.html. It looks like this:
 
-> <meta name="google-signin-client_id" content="<INSERT YOUR OWN ID HERE">
+```
+<meta name="google-signin-client_id" content="<INSERT YOUR OWN ID HERE">
+```
 
 Replace the <INSERT YOUR OWN ID HERE> with the ID from google, then the application is ready to be run.
 
