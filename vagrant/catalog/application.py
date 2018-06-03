@@ -557,6 +557,13 @@ def delete_item(item_id):
 
 
 def verify_creator(creator_id):
+    """
+    verify_creator: Verify that the current user created an item
+        Args:
+            creator_id (int): ID of the user that created the given item
+        Returns:
+            True if current user created the item, False otherwise
+    """
     # Get the current user ID
     username = login_session['username']
     user = session.query(User).filter_by(username=username).one()
