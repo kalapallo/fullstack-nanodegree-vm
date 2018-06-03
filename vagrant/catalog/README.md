@@ -10,7 +10,7 @@ Before running the application, the user must register the app on Google and get
 <meta name="google-signin-client_id" content="<INSERT YOUR OWN ID HERE">
 ```
 
-Replace the <INSERT YOUR OWN ID HERE> with the ID from google, then the application is ready to be run.
+Replace the \<INSERT YOUR OWN ID HERE\> with the ID from google, then the application is ready to be run.
 
 To run the application, open a terminal in the main directory and run "python application.py" without the quote marks. This will start the web application on localhost in port 8000. The app can be accessed at http://localhost:8000. On first run, the application doesn't show any data because the database is empty. To populate the database, the user must log in using his or her Google account by clicking on the Login button. After logging in, an "Add item" link appears.
 
