@@ -219,7 +219,7 @@ def gdisconnect():
     # returned code is 400 due to tokens not matching. Which makes it
     # impossible to disconnect a user. Okay.
 
-    #if result['status'] == '200':
+    # if result['status'] == '200':
     if True:
         del login_session['access_token']
         del login_session['auth_token']
@@ -335,7 +335,7 @@ def show_catalog():
     """
     categories = session.query(Category).all()
 
-    items = session.query(Item, Category).filter(Category.id == Item.category) \
+    items = session.query(Item, Category).filter(Category.id == Item.category)\
         .order_by(desc(Item.date_added)).limit(10).all()
 
     logged_in = 'username' in login_session
@@ -506,16 +506,6 @@ def edit_item(item_id):
 
         if not verify_creator(item.creator_id):
             return redirect(request.referrer)
-        # Get the current user ID
-        #username = login_session['username']
-        #user = session.query(User).filter_by(username=username).one()
-        #user_id = user.id
-
-        # If the current user did not create this item,
-        # redirect the user back to previous page
-        #if user_id != item.creator_id:
-        #    flash('You do not have permission to edit this item')
-        #    return redirect(request.referrer)
 
         return render_template("edit_item.html", logged_in=logged_in,
                                categories=categories, item=item)
@@ -578,8 +568,8 @@ def verify_creator(creator_id):
     return True
 
 
-@app.route('/catalog/<category>/items.json')
-@app.route('/catalog/items/<item>.json')
+@app.route('/catalog/<string:category>/items.json')
+@app.route('/catalog/<string:category>/<string:item>.json')
 @app.route('/catalog.json')
 def show_json(category=None, item=None):
     """
@@ -592,21 +582,25 @@ def show_json(category=None, item=None):
             JSON dictionary containing the requested data
     """
     if category is not None:
-        try:
-            # Try to find category
-            cat = session.query(Category).filter_by(id=category).one()
-            return jsonify(Category=cat.serialize)
-        except NoResultFound as err:
-            error = "Category not found"
-            return render_template("error.html", error=error)
-    elif item is not None:
-        try:
-            # Try to find item
-            itm = session.query(Item).filter_by(id=item).one()
-            return jsonify(Item=itm.serialize)
-        except NoResultFound as err:
-            error = "Item not found"
-            return render_template("error.html", error=error)
+        if item is not None:
+            # Category and item
+            try:
+                # Try to find item
+                itm = session.query(Item, Category).filter(
+                    Category.name == category).filter(Item.name == item).\
+                    filter(Item.category == Category.id).one()
+                return jsonify(Item=itm.Item.serialize)
+            except NoResultFound as err:
+                error = "Item not found in this category"
+                return render_template("error.html", error=error)
+        else:
+            # Category only
+            try:
+                cat = session.query(Category).filter_by(name=category).one()
+                return jsonify(Category=cat.serialize)
+            except NoResultFound as err:
+                error = "Category not found"
+                return render_template("error.html", error=error)
 
     # If no category or item has been defined, show all categories and items
     categories = session.query(Category).all()
